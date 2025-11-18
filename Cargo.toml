@@ -1,0 +1,15 @@
+[package]
+name = "kicad-generator"
+version = "0.1.0"
+edition = "2024"
+authors = ["Taraxtix <antonin.brauer@yahoo.fr>"]
+license = "MIT"
+
+[lib]
+name = "kicad_generator"
+
+[dependencies]
+clap = { version = "4.5.52", features = ["derive"] }
+lazy_static = "1.5.0"
+uuid = { version = "1.18.1", features = ["v4"] }
+regex = "1.12.2"
