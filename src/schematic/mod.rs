@@ -2,7 +2,9 @@ pub mod graphic;
 pub mod symbol;
 pub mod symbol_library;
 
+use crate::parser;
 use crate::schematic::graphic::Graphic;
+use std::str::FromStr;
 use symbol::{Symbol, SymbolInstance};
 use uuid::Uuid;
 
@@ -97,4 +99,33 @@ pub struct HierarchicalPin {}
 pub struct Page {
     path: String,
     page_number: usize,
+}
+
+#[derive(Debug)]
+pub struct Position {
+    x: f32,
+    y: f32,
+    rotation: Option<f32>,
+}
+
+impl Position {
+    pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
+        let (position, content) = parser::expect_regex(
+            content,
+            r#"\(at -?\d+(\.\d+)? -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#,
+        )?;
+        let position = position.replace("(at ", "").replace(")", "");
+        let position = position
+            .split(' ')
+            .map(|value| f32::from_str(value).expect("Failed to parse float"))
+            .collect::<Vec<_>>();
+        Ok((
+            Self {
+                x: position[0],
+                y: position[1],
+                rotation: position.get(2).copied(),
+            },
+            content,
+        ))
+    }
 }

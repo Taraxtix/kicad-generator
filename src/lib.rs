@@ -1,3 +1,4 @@
+mod parser;
 pub mod schematic;
 
 pub const PAGE_WIDTH: usize = 297;

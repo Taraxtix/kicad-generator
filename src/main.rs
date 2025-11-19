@@ -8,10 +8,11 @@ lazy_static! {
     static ref KICAD_3RD_PARTY_PATH: OnceLock<String> = OnceLock::new();
     static ref KICAD_SYMBOL_LIBRARIES_PATH: OnceLock<String> = OnceLock::new();
 }
+
 // A program to parse, modify generate KiCad schematics
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
-struct Args {
+pub struct Args {
     project_directory: String,
 
     /// Allows overriding the default path to the 3rd party libraries
@@ -21,10 +22,15 @@ struct Args {
     /// Allows overriding the default path to kicad9's symbol libraries
     #[clap(long, default_value = "/usr/share/kicad/symbols")]
     kicad_symbol_path: String,
+
+    #[clap(short, long, default_value = "false")]
+    debug: bool,
 }
 
 fn main() {
     let args = Args::parse();
+
+    env_logger::init();
 
     let path = args.kicad_3rd_party_path.replace("$HOME", env!("HOME"));
     KICAD_3RD_PARTY_PATH

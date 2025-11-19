@@ -1,12 +1,13 @@
+use crate::parser;
 use crate::schematic::symbol::Symbol;
-use regex::Regex;
+use log::{debug, info};
 use std::fs::read_to_string;
 use std::path::Path;
 
 pub struct SymbolLibrary {
     version: String,
     generator: String,
-    generate_version: String,
+    generator_version: String,
     symbols: Vec<Symbol>,
 }
 
@@ -19,44 +20,34 @@ impl SymbolLibrary {
     pub fn from_string(content: impl Into<String>) -> Result<Self, String> {
         let content = content.into();
         let content = content.trim();
-        let content = Self::expect_str(content, "(kicad_symbol_lib")?;
-        let (version, content) = Self::expect_regex(content, r"\(version \d+\)")?;
+        let content = parser::expect_str(content, "(kicad_symbol_lib")?;
+        let (version, content) = parser::expect_regex(content, r"\(version \d+\)")?;
         let version = version[9..version.len() - 1].to_string();
-        println!("Version: {}", version);
-        todo!("{content}")
-        // Ok(Self{
-        //     version,
-        //     generator,
-        //     generate_version,
-        //     symbols: vec![],
-        // })
-    }
+        debug!("Version: {version}");
+        let (generator, content) = parser::expect_regex(content, r#"\(generator "[^"]+"\)"#)?;
+        let generator = generator[12..generator.len() - 2].to_string();
+        debug!("Generator: {generator}");
+        let (generator_version, mut content) =
+            parser::expect_regex(content, r#"\(generator_version "[^"]+"\)"#)?;
+        let generator_version = generator_version[20..generator_version.len() - 2].to_string();
+        debug!("Generator Version: {generator_version}\n");
 
-    fn expect_str<'a>(content: &'a str, pattern: &'static str) -> Result<&'a str, String> {
-        if let Some(stripped) = content.strip_prefix(pattern) {
-            println!("Got: {}", &content[..pattern.len()]);
-            Ok(stripped.trim())
-        } else {
-            Err(format!(
-                "Expected {pattern}, but got {}",
-                content.split_at(pattern.len() + 1).0
-            ))
+        let mut symbols = vec![];
+        while (content.starts_with("(symbol")) {
+            let (symbol, rest) = Symbol::extract_from(content)?;
+            symbols.push(symbol);
+            content = rest;
         }
-    }
 
-    fn expect_regex<'a>(
-        content: &'a str,
-        pattern: &'static str,
-    ) -> Result<(&'a str, &'a str), String> {
-        let regex = Regex::new(pattern).map_err(|e| e.to_string())?;
-        if let Some(found) = regex.find(content) {
-            if found.start() != 0 {
-                Err(format!("Expected {regex}, but got {}", content))
-            } else {
-                Ok((&content[..found.end()], &content[found.end()..]))
-            }
-        } else {
-            Err(format!("Expected {regex}, but got {}", content))
+        info!("Found {} symbols which names are:", symbols.len());
+        for symbol in symbols.iter() {
+            info!("\t{}", symbol.name);
         }
+        Ok(Self {
+            version,
+            generator,
+            generator_version,
+            symbols,
+        })
     }
 }
