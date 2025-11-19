@@ -1,3 +1,5 @@
+#![allow(dead_code)] // FIXME: Remove this once the code is more complete
+
 mod parser;
 pub mod schematic;
 

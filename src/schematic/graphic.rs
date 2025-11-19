@@ -1,5 +1,4 @@
 use crate::parser;
-use crate::parser::expect_regex;
 use crate::schematic::Position;
 use log::warn;
 use std::str::FromStr;
@@ -44,14 +43,83 @@ pub enum Graphic {
         pin_graphic_style: PinGraphicStyle,
         position: Position,
         length: f32,
+        hide: bool,
         name: String,
         name_text_effect: TextEffect,
         number: usize,
         number_text_effect: TextEffect,
+        alternates: Vec<PinAlternate>,
     },
 }
 
+#[derive(Debug)]
+pub struct PinAlternate {
+    name: String,
+    electrical_type: ElectricalType,
+    pin_graphic_style: PinGraphicStyle,
+}
+
+impl PinAlternate {
+    pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
+        let content = parser::expect_str(content, "(alternate")?;
+        let (name, content) = parser::expect_regex(content, r#""[^"]*""#)?;
+        let name = name[1..name.len() - 1].to_string();
+        let (electrical_type, content) = parser::expect_regex(
+            content,
+            r#"input|output|bidirectional|tri_state|passive|free|unspecified|power_in|power_out|open_collector|open_emitter|no_connect"#,
+        )?;
+        let electrical_type = ElectricalType::from(electrical_type);
+        let (pin_graphic_style, content) = parser::expect_regex(
+            content,
+            r#"line|inverted|clock|inverted_clock|input_low|clock_low|output_low|edge_clock_high|non_logic"#,
+        )?;
+        let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
+        let content = parser::expect_str(content, ")")?;
+        Ok((
+            Self {
+                name,
+                electrical_type,
+                pin_graphic_style,
+            },
+            content,
+        ))
+    }
+}
+
 impl Graphic {
+    pub fn extract_polyline_from(content: &str) -> Result<(Self, &str), String> {
+        let content = parser::expect_str(content, "(polyline")?;
+        let mut content = parser::expect_str(content, "(pts")?;
+
+        let mut points = vec![];
+
+        while content.starts_with("(xy") {
+            let (point, left) =
+                parser::expect_regex(content, r#"\(xy -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
+            let point = point.replace("(xy ", "").replace(")", "");
+            let point = point.split_once(' ').unwrap();
+            let point = (
+                f32::from_str(point.0).unwrap(),
+                f32::from_str(point.1).unwrap(),
+            );
+            points.push(point);
+            content = left;
+        }
+
+        let content = parser::expect_str(content, ")")?;
+        let (stroke, content) = Stroke::extract_from(content)?;
+        let (fill, content) = Fill::extract_from(content)?;
+
+        Ok((
+            Self::Polyline {
+                points,
+                stroke,
+                fill,
+            },
+            content,
+        ))
+    }
+
     pub fn extract_rectangle_from(content: &str) -> Result<(Self, &str), String> {
         let content = parser::expect_str(content, "(rectangle")?;
         let (start, content) =
@@ -119,29 +187,41 @@ impl Graphic {
         let content = parser::expect_str(content, "(pin")?;
         let (electrical_type, content) = parser::expect_regex(
             content,
-            r#"input|output|bidirectional|tristate|passive|free|unspecified|powerin|powerout"#,
+            r#"input|output|bidirectional|tri_state|passive|free|unspecified|power_in|power_out|open_collector|open_emitter|no_connect"#,
         )?;
         let electrical_type = ElectricalType::from(electrical_type);
         let (pin_graphic_style, content) = parser::expect_regex(
             content,
-            r#"line|inverted|clock|invertedclock|inputlow|clocklow|outputlow|edgeclockhigh|nonlogic"#,
+            r#"line|inverted|clock|inverted_clock|input_low|clock_low|output_low|edge_clock_high|non_logic"#,
         )?;
         let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
         let (position, content) = Position::extract_from(content)?;
-        let (length, content) = parser::expect_regex(content, r#"\(length \d+(\.\d+)?\)"#)?;
+        let (length, mut content) = parser::expect_regex(content, r#"\(length \d+(\.\d+)?\)"#)?;
         let length = length
             .replace("(length ", "")
             .replace(")", "")
             .parse::<f32>()
             .unwrap();
-        let (name, content) = expect_regex(content, r#"\(name "[^"]+""#)?;
+
+        let hide = content.starts_with("hide");
+        if hide {
+            content = parser::expect_str(content, "hide")?;
+        }
+
+        let (name, content) = parser::expect_regex(content, r#"\(name "[^"]*""#)?;
         let name = name[7..name.len() - 1].to_string();
         let (name_text_effect, content) = TextEffect::extract_from(content)?;
         let content = parser::expect_str(content, ")")?;
-        let (number, content) = expect_regex(content, r#"\(number "[^"]+""#)?;
+        let (number, content) = parser::expect_regex(content, r#"\(number "[^"]+""#)?;
         let number = number[9..number.len() - 1].parse::<usize>().unwrap();
         let (number_text_effect, content) = TextEffect::extract_from(content)?;
-        let content = parser::expect_str(content, ")")?;
+        let mut content = parser::expect_str(content, ")")?;
+        let mut alternates = vec![];
+        while content.starts_with("(alternate") {
+            let (alternate, left) = PinAlternate::extract_from(content)?;
+            alternates.push(alternate);
+            content = left;
+        }
         let content = parser::expect_str(content, ")")?;
 
         Ok((
@@ -150,10 +230,12 @@ impl Graphic {
                 pin_graphic_style,
                 position,
                 length,
+                hide,
                 name,
                 name_text_effect,
                 number,
                 number_text_effect,
+                alternates,
             },
             content,
         ))
@@ -259,6 +341,8 @@ impl Fill {
 #[derive(Debug)]
 pub struct TextEffect {
     font: Font,
+    justify: Option<String>,
+    italic: bool,
     hide: bool,
 }
 
@@ -267,7 +351,12 @@ impl TextEffect {
         let content = parser::expect_str(content, "(effects")?;
         let (font, mut content) = Font::extract_from(content)?;
 
-        let mut it = Self { font, hide: false };
+        let mut it = Self {
+            font,
+            hide: false,
+            justify: None,
+            italic: false,
+        };
 
         loop {
             if content.starts_with(")") {
@@ -277,6 +366,11 @@ impl TextEffect {
                 let (hide, left) = parser::expect_regex(content, r#"\(hide (yes|no)\)"#)?;
                 let hide = &hide[6..hide.len() - 1];
                 it.hide = hide == "yes";
+                content = left;
+            } else if content.starts_with("(justify") {
+                let (justify, left) = parser::expect_regex(content, r#"\(justify [^\)]+\)"#)?;
+                let justify = &justify[9..justify.len() - 1];
+                it.justify = Some(justify.to_string());
                 content = left;
             } else {
                 let (skipped, left) = parser::expect_regex(content, r#"\([^\)]*\)"#)?;
@@ -292,6 +386,7 @@ impl TextEffect {
 #[derive(Debug)]
 struct Font {
     size: (f32, f32), //(size HEIGHT WIDTH)
+    italic: bool,
 }
 
 impl Font {
@@ -306,14 +401,22 @@ impl Font {
             f32::from_str(size.1).unwrap(),
         );
 
+        let mut italic = false;
+
         while !content.starts_with(")") {
-            let (skipped, left) = parser::expect_regex(content, r#"\([^\)]*\)"#)?;
-            warn!("Skipped: {}", skipped);
-            content = left;
+            if content.starts_with("(italic yes)") {
+                let left = parser::expect_str(content, "(italic yes)")?;
+                italic = true;
+                content = left;
+            } else {
+                let (skipped, left) = parser::expect_regex(content, r#"\([^\)]*\)"#)?;
+                warn!("Skipped: {}", skipped);
+                content = left;
+            }
         }
         let content = parser::expect_str(content, ")")?;
 
-        Ok((Self { size }, content))
+        Ok((Self { size, italic }, content))
     }
 }
 
@@ -339,13 +442,16 @@ impl From<&str> for ElectricalType {
             "input" => Self::Input,
             "output" => Self::Output,
             "bidirectional" => Self::Bidirectional,
-            "tristate" => Self::TriState,
+            "tri_state" => Self::TriState,
             "passive" => Self::Passive,
             "free" => Self::Free,
             "unspecified" => Self::Unspecified,
-            "powerin" => Self::PowerIn,
-            "powerout" => Self::PowerOut,
-            _ => unreachable!(),
+            "power_in" => Self::PowerIn,
+            "power_out" => Self::PowerOut,
+            "open_collector" => Self::OpenCollector,
+            "open_emitter" => Self::OpenEmitter,
+            "no_connect" => Self::NoConnect,
+            s => unreachable!("got {s} for ElectricalType"),
         }
     }
 }
@@ -369,13 +475,13 @@ impl From<&str> for PinGraphicStyle {
             "line" => Self::Line,
             "inverted" => Self::Inverted,
             "clock" => Self::Clock,
-            "invertedclock" => Self::InvertedClock,
-            "inputlow" => Self::InputLow,
-            "clocklow" => Self::ClockLow,
-            "outputlow" => Self::OutputLow,
-            "edgeclockhigh" => Self::EdgeClockHigh,
-            "nonlogic" => Self::NonLogic,
-            _ => unreachable!(),
+            "inverted_clock" => Self::InvertedClock,
+            "input_low" => Self::InputLow,
+            "clock_low" => Self::ClockLow,
+            "output_low" => Self::OutputLow,
+            "edge_clock_high" => Self::EdgeClockHigh,
+            "non_logic" => Self::NonLogic,
+            s => unreachable!("got {s} for ElectricalType"),
         }
     }
 }

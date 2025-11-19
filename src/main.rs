@@ -42,9 +42,8 @@ fn main() {
 
     let _schematic = KicadSch::default();
 
-    let _symbol_lib = SymbolLibrary::from_path(format!(
-        "{}/com_github_CDFER_JLCPCB-Kicad-Library/JLCPCB-ICs.kicad_sym",
+    let _symbol_lib = SymbolLibrary::all_from_dir(
         KICAD_3RD_PARTY_PATH.get().unwrap()
-    ))
+    )
     .unwrap_or_else(|e| panic!("{}", e));
 }
