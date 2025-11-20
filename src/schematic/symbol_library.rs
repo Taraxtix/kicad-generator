@@ -3,11 +3,13 @@ use crate::schematic::symbol::Symbol;
 use log::{debug, info};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
+use serde::{Deserialize, Serialize};
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
+#[derive(Deserialize, Serialize)]
 pub struct SymbolLibrary {
-    name: String,
+    pub name: String,
     version: String,
     generator: String,
     generator_version: String,
@@ -15,6 +17,45 @@ pub struct SymbolLibrary {
 }
 
 impl SymbolLibrary {
+    pub fn get_statics() -> Vec<Self> {
+        let path = Path::new("static/included_libs");
+        let mut libraries = vec![];
+        for entry in path.read_dir().unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let str = read_to_string(&path).unwrap();
+            libraries.push(serde_json::from_str(&str).unwrap());
+        }
+        libraries
+    }
+    
+    pub fn add_dir_to(libraries: &mut Vec<Self>, path: impl AsRef<Path>) -> Result<(), String> {
+        let libraries_name = libraries
+            .iter()
+            .map(|lib| lib.name.clone())
+            .collect::<Vec<_>>();
+
+        let paths = Self::get_all_lib_files(path)?;
+        let paths = paths
+            .iter()
+            .filter(|path| {
+                !libraries_name.contains(&path.file_stem().unwrap().to_string_lossy().to_string())
+            })
+            .collect::<Vec<_>>();
+
+        libraries.extend(
+            paths
+                .par_iter()
+                .map(|path| {
+                    info!("Loading symbol library from {}", path.to_string_lossy());
+                    Self::from_path(path)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+
+        Ok(())
+    }
+
     pub fn all_from_dir(path: impl AsRef<Path>) -> Result<Vec<Self>, String> {
         let paths = Self::get_all_lib_files(path)?;
         paths

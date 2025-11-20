@@ -1,9 +1,10 @@
 use crate::parser;
 use crate::schematic::Position;
 use log::warn;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum Graphic {
     Arc {
         start: (f32, f32),
@@ -52,41 +53,46 @@ pub enum Graphic {
     },
 }
 
-#[derive(Debug)]
-pub struct PinAlternate {
-    name: String,
-    electrical_type: ElectricalType,
-    pin_graphic_style: PinGraphicStyle,
-}
+impl Graphic {
+    pub fn extract_arc_from(content: &str) -> Result<(Self, &str), String> {
+        let content = parser::expect_str(content, "(arc")?;
 
-impl PinAlternate {
-    pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
-        let content = parser::expect_str(content, "(alternate")?;
-        let (name, content) = parser::expect_regex(content, r#""[^"]*""#)?;
-        let name = name[1..name.len() - 1].to_string();
-        let (electrical_type, content) = parser::expect_regex(
-            content,
-            r#"input|output|bidirectional|tri_state|passive|free|unspecified|power_in|power_out|open_collector|open_emitter|no_connect"#,
-        )?;
-        let electrical_type = ElectricalType::from(electrical_type);
-        let (pin_graphic_style, content) = parser::expect_regex(
-            content,
-            r#"line|inverted|clock|inverted_clock|input_low|clock_low|output_low|edge_clock_high|non_logic"#,
-        )?;
-        let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
-        let content = parser::expect_str(content, ")")?;
+        let (start, content) =
+            parser::expect_regex(content, r#"\(start -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
+        let start = start.replace("(start ", "").replace(")", "");
+        let start = start.split_once(' ').unwrap();
+        let start = (
+            f32::from_str(start.0).unwrap(),
+            f32::from_str(start.1).unwrap(),
+        );
+
+        let (mid, content) =
+            parser::expect_regex(content, r#"\(mid -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
+        let mid = mid.replace("(mid ", "").replace(")", "");
+        let mid = mid.split_once(' ').unwrap();
+        let mid = (f32::from_str(mid.0).unwrap(), f32::from_str(mid.1).unwrap());
+
+        let (end, content) =
+            parser::expect_regex(content, r#"\(end -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
+        let end = end.replace("(end ", "").replace(")", "");
+        let end = end.split_once(' ').unwrap();
+        let end = (f32::from_str(end.0).unwrap(), f32::from_str(end.1).unwrap());
+
+        let (stroke, content) = Stroke::extract_from(content)?;
+        let (fill, content) = Fill::extract_from(content)?;
+
         Ok((
-            Self {
-                name,
-                electrical_type,
-                pin_graphic_style,
+            Self::Arc {
+                start,
+                mid,
+                end,
+                stroke,
+                fill,
             },
             content,
         ))
     }
-}
 
-impl Graphic {
     pub fn extract_polyline_from(content: &str) -> Result<(Self, &str), String> {
         let content = parser::expect_str(content, "(polyline")?;
         let mut content = parser::expect_str(content, "(pts")?;
@@ -242,7 +248,41 @@ impl Graphic {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PinAlternate {
+    name: String,
+    electrical_type: ElectricalType,
+    pin_graphic_style: PinGraphicStyle,
+}
+
+impl PinAlternate {
+    pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
+        let content = parser::expect_str(content, "(alternate")?;
+        let (name, content) = parser::expect_regex(content, r#""[^"]*""#)?;
+        let name = name[1..name.len() - 1].to_string();
+        let (electrical_type, content) = parser::expect_regex(
+            content,
+            r#"input|output|bidirectional|tri_state|passive|free|unspecified|power_in|power_out|open_collector|open_emitter|no_connect"#,
+        )?;
+        let electrical_type = ElectricalType::from(electrical_type);
+        let (pin_graphic_style, content) = parser::expect_regex(
+            content,
+            r#"line|inverted|clock|inverted_clock|input_low|clock_low|output_low|edge_clock_high|non_logic"#,
+        )?;
+        let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
+        let content = parser::expect_str(content, ")")?;
+        Ok((
+            Self {
+                name,
+                electrical_type,
+                pin_graphic_style,
+            },
+            content,
+        ))
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Stroke {
     width: f32,
     ty: StrokeType,
@@ -279,7 +319,7 @@ impl Stroke {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum StrokeType {
     Dash,
     DashDot,
@@ -310,7 +350,7 @@ impl StrokeType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum Fill {
     None,
     Outline,
@@ -338,7 +378,7 @@ impl Fill {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct TextEffect {
     font: Font,
     justify: Option<String>,
@@ -383,7 +423,7 @@ impl TextEffect {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Font {
     size: (f32, f32), //(size HEIGHT WIDTH)
     italic: bool,
@@ -420,7 +460,7 @@ impl Font {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum ElectricalType {
     Input,
     Output,
@@ -456,7 +496,7 @@ impl From<&str> for ElectricalType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum PinGraphicStyle {
     Line,
     Inverted,

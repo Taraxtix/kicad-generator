@@ -2,9 +2,10 @@ use crate::parser;
 use crate::schematic::graphic::{Graphic, TextEffect};
 use crate::schematic::Position;
 use log::{debug, warn};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Symbol {
     pub name: String,
     exclude_from_sim: bool,
@@ -72,6 +73,10 @@ impl Symbol {
                 let (circle, left) = Graphic::extract_circle_from(content)?;
                 it.graphics.push(circle);
                 content = left;
+            } else if content.starts_with("(arc") {
+                let (arc, left) = Graphic::extract_arc_from(content)?;
+                it.graphics.push(arc);
+                content = left;
             } else if content.starts_with("(pin_names") {
                 content = parser::expect_str(content, "(pin_names")?;
                 let offset_opt;
@@ -129,7 +134,7 @@ pub struct SymbolInstance {
     instance: Instance, //FIXME: Should be Vec<Instance> (Also see fixme of Instance type)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Property {
     name: String,
     value: String,

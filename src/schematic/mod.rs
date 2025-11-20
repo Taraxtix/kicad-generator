@@ -4,6 +4,7 @@ pub mod symbol_library;
 
 use crate::parser;
 use crate::schematic::graphic::Graphic;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use symbol::{Symbol, SymbolInstance};
 use uuid::Uuid;
@@ -101,7 +102,7 @@ pub struct Page {
     page_number: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Position {
     x: f32,
     y: f32,

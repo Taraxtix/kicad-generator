@@ -1,4 +1,5 @@
 use kicad_generator::schematic::{symbol_library::SymbolLibrary, KicadSch};
+use std::path::Path;
 
 use clap::Parser;
 use lazy_static::lazy_static;
@@ -42,8 +43,15 @@ fn main() {
 
     let _schematic = KicadSch::default();
 
-    let _symbol_lib = SymbolLibrary::all_from_dir(
-        KICAD_3RD_PARTY_PATH.get().unwrap()
-    )
-    .unwrap_or_else(|e| panic!("{}", e));
+    let mut symbol_libraries = SymbolLibrary::get_statics();
+    SymbolLibrary::add_dir_to(&mut symbol_libraries, KICAD_3RD_PARTY_PATH.get().unwrap()).unwrap();
+
+    for lib in symbol_libraries.iter() {
+        let path = format!("static/included_libs/{}", lib.name);
+        let path = Path::new(&path);
+        let str = serde_json::to_string(&lib)
+            .unwrap_or_else(|e| panic!("Unable to serialize library {}: {e}", lib.name));
+        std::fs::write(path, str)
+            .unwrap_or_else(|e| panic!("Unable to write library {}: {e}", lib.name));
+    }
 }
