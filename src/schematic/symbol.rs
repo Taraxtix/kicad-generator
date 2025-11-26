@@ -1,33 +1,39 @@
-use crate::parser;
-use crate::schematic::graphic::{Graphic, TextEffect};
-use crate::schematic::Position;
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+use crate::{parser,
+            schematic::{KicadSch,
+                        Position,
+                        graphic::{Graphic, TextEffect}}};
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Symbol {
     pub name: String,
     exclude_from_sim: bool,
     pin_names: (Option<f32>, bool), //[(pin_names [offset OFFSET] hide)]
-    pin_numbers: bool, // (pin_numbers hide) => true if it exist (hidden), false otherwise
+    pin_numbers: bool,              /* (pin_numbers hide) => true if it exist (hidden), false
+                                     * otherwise */
     in_bom: bool,
     on_board: bool,
     properties: Vec<Property>,
     graphics: Vec<Graphic>,
-    pins: Vec<Graphic>, //Graphic::Pin
+    pins: Vec<Graphic>, // Graphic::Pin
     units: Vec<Symbol>,
     unit_name: Option<String>,
 }
 
 impl Symbol {
-    pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
+    pub fn extract_from<'a>(
+        content: &'a str,
+        lib_name: &'a String,
+    ) -> Result<(Self, &'a str), String> {
         let content = content.trim();
         let (name, mut content) = parser::expect_regex(content, r#"\(symbol "[^"]+""#)?;
         let name = name[9..name.len() - 1].to_string();
         debug!("Symbol Name: {name}");
         let mut it = Self {
-            name,
+            name: format!("{}:{}", lib_name, name),
             exclude_from_sim: true,
             pin_names: (None, false),
             pin_numbers: false,
@@ -62,7 +68,7 @@ impl Symbol {
                 it.properties.push(property);
                 content = left;
             } else if content.starts_with("(symbol") {
-                let (unit, left) = Self::extract_from(content)?;
+                let (unit, left) = Self::extract_from(content, lib_name)?;
                 it.units.push(unit);
                 content = left;
             } else if content.starts_with("(rectangle") {
@@ -123,7 +129,7 @@ impl Symbol {
 
 #[derive(Debug)]
 pub struct SymbolInstance {
-    name: String,
+    pub name: String,
     position: Position,
     unit: usize,
     in_bom: bool,
@@ -131,10 +137,48 @@ pub struct SymbolInstance {
     uuid: Uuid,
     properties: Vec<Property>,
     pins: Vec<Pin>,
-    instance: Instance, //FIXME: Should be Vec<Instance> (Also see fixme of Instance type)
+    instance: Instance, // FIXME: Should be Vec<Instance> (Also see fixme of Instance type)
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+impl SymbolInstance {
+    pub fn from(
+        symbol: &Symbol,
+        position: Position,
+        unit: usize,
+        sheet: &KicadSch,
+    ) -> Result<Self, String> {
+        let base_reference = symbol
+            .properties
+            .iter()
+            .find(|p| p.name == "Reference")
+            .ok_or("Symbol doesn't contains a Reference property.")?
+            .value
+            .clone();
+
+        let pins = symbol.pins.iter().map(|pin| Pin::from(pin)).collect();
+
+        Ok(Self {
+            name: symbol.name.clone(),
+            position,
+            unit,
+            in_bom: true,
+            on_board: true,
+            uuid: Uuid::new_v4(),
+            properties: symbol.properties.clone(),
+            pins,
+            instance: Instance {
+                project_name: sheet.project_name.clone(),
+                path: InstancePath {
+                    path: format!("/{}", sheet.uuid),
+                    reference: format!("{}{}", base_reference, unit),
+                    unit,
+                },
+            },
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Property {
     name: String,
     value: String,
@@ -162,37 +206,34 @@ impl Property {
 
         let (text_effect, content) = TextEffect::extract_from(content)?;
         let content = parser::expect_str(content, ")")?;
-        Ok((
-            Self {
-                name,
-                value,
-                do_not_autoplace,
-                position,
-                text_effect,
-            },
-            content,
-        ))
+        Ok((Self { name, value, do_not_autoplace, position, text_effect }, content))
     }
 }
 
 #[derive(Debug)]
 struct Pin {
-    name: String, //Usually the pin number
+    name: String, // Usually the pin number
     uuid: Uuid,
+}
+
+impl Pin {
+    pub fn from(pin: &Graphic) -> Self {
+        let Graphic::Pin { number, .. } = pin else { unreachable!("Should always be a pin") };
+        Self { name: format!("{number}"), uuid: Uuid::new_v4() }
+    }
 }
 
 #[derive(Debug)]
 struct Instance {
-    name: String,
     project_name: String,
-    path: InstancePath, //FIXME: Should be Vec<InstancePath>
+    path: InstancePath, // FIXME: Should be Vec<InstancePath>
 }
 
 #[derive(Debug)]
 pub struct InstancePath {
-    path: String,      //Usually "/{project_uuid}"
+    path:      String, // Usually "/{project_uuid}"
     reference: String, // Example "U2"
-    unit: usize,
+    unit:      usize,
 }
 
 // #[derive(Debug)]

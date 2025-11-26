@@ -2,12 +2,13 @@ pub mod graphic;
 pub mod symbol;
 pub mod symbol_library;
 
-use crate::parser;
-use crate::schematic::graphic::Graphic;
+use std::{fmt::Display, str::FromStr};
+
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use symbol::{Symbol, SymbolInstance};
 use uuid::Uuid;
+
+use crate::{parser, schematic::graphic::Graphic};
 
 #[derive(Debug)]
 pub struct KicadSch {
@@ -16,7 +17,7 @@ pub struct KicadSch {
     generator_version: &'static str,
     uuid: Uuid,
     paper: &'static str,
-    lib_symbols: Vec<Symbol>, //Will be written even if empty
+    lib_symbols: Vec<Symbol>, // Will be written even if empty
     junctions: Vec<Junction>,
     no_connects: Vec<NoConnect>,
     bus_entries: Vec<BusEntry>,
@@ -31,6 +32,17 @@ pub struct KicadSch {
     hierarchical_sheets: Vec<HierarchicalSheet>,
     hierarchical_pins: Vec<HierarchicalPin>,
     page: Page,
+    pub project_name: String, // Will not be written
+}
+
+impl KicadSch {
+    pub fn place(&mut self, symbol: &Symbol, position: Position) {
+        if !self.lib_symbols.contains(symbol) {
+            self.lib_symbols.push(symbol.clone())
+        }
+        let unit = self.symbols.iter().filter(|s| s.name == symbol.name).count() + 1;
+        let symbol_instance = SymbolInstance::from(symbol, position, unit, self);
+    }
 }
 
 impl Default for KicadSch {
@@ -55,12 +67,14 @@ impl Default for KicadSch {
             symbols: vec![],
             hierarchical_sheets: vec![],
             hierarchical_pins: vec![],
-            page: Page {
-                path: "/".to_string(),
-                page_number: 1,
-            },
+            page: Page { path: "/".to_string(), page_number: 1 },
+            project_name: "".to_string(),
         }
     }
+}
+
+impl Display for KicadSch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { todo!() }
 }
 
 #[derive(Debug)]
@@ -102,31 +116,22 @@ pub struct Page {
     page_number: usize,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct Position {
-    x: f32,
-    y: f32,
-    rotation: Option<f32>,
+    pub x: f32,
+    pub y: f32,
+    pub rotation: Option<f32>,
 }
 
 impl Position {
     pub fn extract_from(content: &str) -> Result<(Self, &str), String> {
-        let (position, content) = parser::expect_regex(
-            content,
-            r#"\(at -?\d+(\.\d+)? -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#,
-        )?;
+        let (position, content) =
+            parser::expect_regex(content, r#"\(at -?\d+(\.\d+)? -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
         let position = position.replace("(at ", "").replace(")", "");
         let position = position
             .split(' ')
             .map(|value| f32::from_str(value).expect("Failed to parse float"))
             .collect::<Vec<_>>();
-        Ok((
-            Self {
-                x: position[0],
-                y: position[1],
-                rotation: position.get(2).copied(),
-            },
-            content,
-        ))
+        Ok((Self { x: position[0], y: position[1], rotation: position.get(2).copied() }, content))
     }
 }

@@ -1,42 +1,43 @@
-use crate::parser;
-use crate::schematic::Position;
-use log::warn;
-use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug, Deserialize, Serialize)]
+use log::warn;
+use serde::{Deserialize, Serialize};
+
+use crate::{parser, schematic::Position};
+
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub enum Graphic {
     Arc {
-        start: (f32, f32),
-        mid: (f32, f32),
-        end: (f32, f32),
+        start:  (f32, f32),
+        mid:    (f32, f32),
+        end:    (f32, f32),
         stroke: Stroke,
-        fill: Fill,
+        fill:   Fill,
     },
     Circle {
         center: (f32, f32),
         radius: f32,
         stroke: Stroke,
-        fill: Fill,
+        fill:   Fill,
     },
     Bezier {
         points: Vec<(f32, f32)>,
         stroke: Stroke,
-        fill: Fill,
+        fill:   Fill,
     },
     Polyline {
         points: Vec<(f32, f32)>,
         stroke: Stroke,
-        fill: Fill,
+        fill:   Fill,
     },
     Rectangle {
-        start: (f32, f32),
-        end: (f32, f32),
+        start:  (f32, f32),
+        end:    (f32, f32),
         stroke: Stroke,
-        fill: Fill,
+        fill:   Fill,
     },
     Text {
-        text: String,
+        text:     String,
         position: Position, // (at x y rotation)
     },
     Pin {
@@ -61,10 +62,7 @@ impl Graphic {
             parser::expect_regex(content, r#"\(start -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
         let start = start.replace("(start ", "").replace(")", "");
         let start = start.split_once(' ').unwrap();
-        let start = (
-            f32::from_str(start.0).unwrap(),
-            f32::from_str(start.1).unwrap(),
-        );
+        let start = (f32::from_str(start.0).unwrap(), f32::from_str(start.1).unwrap());
 
         let (mid, content) =
             parser::expect_regex(content, r#"\(mid -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
@@ -81,16 +79,7 @@ impl Graphic {
         let (stroke, content) = Stroke::extract_from(content)?;
         let (fill, content) = Fill::extract_from(content)?;
 
-        Ok((
-            Self::Arc {
-                start,
-                mid,
-                end,
-                stroke,
-                fill,
-            },
-            content,
-        ))
+        Ok((Self::Arc { start, mid, end, stroke, fill }, content))
     }
 
     pub fn extract_polyline_from(content: &str) -> Result<(Self, &str), String> {
@@ -104,10 +93,7 @@ impl Graphic {
                 parser::expect_regex(content, r#"\(xy -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
             let point = point.replace("(xy ", "").replace(")", "");
             let point = point.split_once(' ').unwrap();
-            let point = (
-                f32::from_str(point.0).unwrap(),
-                f32::from_str(point.1).unwrap(),
-            );
+            let point = (f32::from_str(point.0).unwrap(), f32::from_str(point.1).unwrap());
             points.push(point);
             content = left;
         }
@@ -116,14 +102,7 @@ impl Graphic {
         let (stroke, content) = Stroke::extract_from(content)?;
         let (fill, content) = Fill::extract_from(content)?;
 
-        Ok((
-            Self::Polyline {
-                points,
-                stroke,
-                fill,
-            },
-            content,
-        ))
+        Ok((Self::Polyline { points, stroke, fill }, content))
     }
 
     pub fn extract_rectangle_from(content: &str) -> Result<(Self, &str), String> {
@@ -132,10 +111,7 @@ impl Graphic {
             parser::expect_regex(content, r#"\(start -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
         let start = start.replace("(start ", "").replace(")", "");
         let start = start.split_once(' ').unwrap();
-        let start = (
-            f32::from_str(start.0).unwrap(),
-            f32::from_str(start.1).unwrap(),
-        );
+        let start = (f32::from_str(start.0).unwrap(), f32::from_str(start.1).unwrap());
 
         let (end, content) =
             parser::expect_regex(content, r#"\(end -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
@@ -147,15 +123,7 @@ impl Graphic {
         let (fill, content) = Fill::extract_from(content)?;
         let content = parser::expect_str(content, ")")?;
 
-        Ok((
-            Self::Rectangle {
-                start,
-                end,
-                stroke,
-                fill,
-            },
-            content,
-        ))
+        Ok((Self::Rectangle { start, end, stroke, fill }, content))
     }
 
     pub fn extract_circle_from(content: &str) -> Result<(Self, &str), String> {
@@ -164,29 +132,14 @@ impl Graphic {
             parser::expect_regex(content, r#"\(center -?\d+(\.\d+)? -?\d+(\.\d+)?\)"#)?;
         let center = center.replace("(center ", "").replace(")", "");
         let center = center.split_once(' ').unwrap();
-        let center = (
-            f32::from_str(center.0).unwrap(),
-            f32::from_str(center.1).unwrap(),
-        );
+        let center = (f32::from_str(center.0).unwrap(), f32::from_str(center.1).unwrap());
 
         let (radius, content) = parser::expect_regex(content, r#"\(radius \d+(\.\d+)?\)"#)?;
-        let radius = radius
-            .replace("(radius ", "")
-            .replace(")", "")
-            .parse::<f32>()
-            .unwrap();
+        let radius = radius.replace("(radius ", "").replace(")", "").parse::<f32>().unwrap();
         let (stroke, content) = Stroke::extract_from(content)?;
         let (fill, content) = Fill::extract_from(content)?;
         let content = parser::expect_str(content, ")")?;
-        Ok((
-            Self::Circle {
-                center,
-                radius,
-                stroke,
-                fill,
-            },
-            content,
-        ))
+        Ok((Self::Circle { center, radius, stroke, fill }, content))
     }
 
     pub fn extract_pin_from(content: &str) -> Result<(Self, &str), String> {
@@ -203,11 +156,7 @@ impl Graphic {
         let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
         let (position, content) = Position::extract_from(content)?;
         let (length, mut content) = parser::expect_regex(content, r#"\(length \d+(\.\d+)?\)"#)?;
-        let length = length
-            .replace("(length ", "")
-            .replace(")", "")
-            .parse::<f32>()
-            .unwrap();
+        let length = length.replace("(length ", "").replace(")", "").parse::<f32>().unwrap();
 
         let hide = content.starts_with("hide");
         if hide {
@@ -248,7 +197,7 @@ impl Graphic {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct PinAlternate {
     name: String,
     electrical_type: ElectricalType,
@@ -271,33 +220,22 @@ impl PinAlternate {
         )?;
         let pin_graphic_style = PinGraphicStyle::from(pin_graphic_style);
         let content = parser::expect_str(content, ")")?;
-        Ok((
-            Self {
-                name,
-                electrical_type,
-                pin_graphic_style,
-            },
-            content,
-        ))
+        Ok((Self { name, electrical_type, pin_graphic_style }, content))
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct Stroke {
     width: f32,
-    ty: StrokeType,
-    color: Option<(f32, f32, f32, f32)>, //RGBA
+    ty:    StrokeType,
+    color: Option<(f32, f32, f32, f32)>, // RGBA
 }
 
 impl Stroke {
     fn extract_from(content: &str) -> Result<(Self, &str), String> {
         let content = parser::expect_str(content, "(stroke")?;
         let (width, content) = parser::expect_regex(content, r#"\(width \d+(\.\d+)?\)"#)?;
-        let width = width
-            .replace("(width ", "")
-            .replace(")", "")
-            .parse::<f32>()
-            .unwrap();
+        let width = width.replace("(width ", "").replace(")", "").parse::<f32>().unwrap();
         let (ty, content) = StrokeType::extract_from(content)?;
         let (color, content) = if content.starts_with("(color") {
             let (color, content) = parser::expect_regex(
@@ -305,10 +243,7 @@ impl Stroke {
                 r#"\(color \d+(\.\d+)? \d+(\.\d+)? \d+(\.\d+)? \d+(\.\d+)?\)"#,
             )?;
             let color = color.replace("(color ", "").replace(")", "");
-            let color = color
-                .split(' ')
-                .map(|x| x.parse::<f32>().unwrap())
-                .collect::<Vec<_>>();
+            let color = color.split(' ').map(|x| x.parse::<f32>().unwrap()).collect::<Vec<_>>();
             let color = Some((color[0], color[1], color[2], color[3]));
             (color, content)
         } else {
@@ -319,7 +254,7 @@ impl Stroke {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub enum StrokeType {
     Dash,
     DashDot,
@@ -350,7 +285,7 @@ impl StrokeType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub enum Fill {
     None,
     Outline,
@@ -378,12 +313,12 @@ impl Fill {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct TextEffect {
-    font: Font,
+    font:    Font,
     justify: Option<String>,
-    italic: bool,
-    hide: bool,
+    italic:  bool,
+    hide:    bool,
 }
 
 impl TextEffect {
@@ -391,12 +326,7 @@ impl TextEffect {
         let content = parser::expect_str(content, "(effects")?;
         let (font, mut content) = Font::extract_from(content)?;
 
-        let mut it = Self {
-            font,
-            hide: false,
-            justify: None,
-            italic: false,
-        };
+        let mut it = Self { font, hide: false, justify: None, italic: false };
 
         loop {
             if content.starts_with(")") {
@@ -423,9 +353,9 @@ impl TextEffect {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Font {
-    size: (f32, f32), //(size HEIGHT WIDTH)
+    size:   (f32, f32), //(size HEIGHT WIDTH)
     italic: bool,
 }
 
@@ -436,10 +366,7 @@ impl Font {
             parser::expect_regex(content, r#"\(size \d+(\.\d+)? \d+(\.\d+)?\)"#)?;
         let size = size.replace("(size ", "").replace(")", "");
         let size = size.split_once(' ').unwrap();
-        let size = (
-            f32::from_str(size.0).unwrap(),
-            f32::from_str(size.1).unwrap(),
-        );
+        let size = (f32::from_str(size.0).unwrap(), f32::from_str(size.1).unwrap());
 
         let mut italic = false;
 
@@ -460,7 +387,7 @@ impl Font {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub enum ElectricalType {
     Input,
     Output,
@@ -496,7 +423,7 @@ impl From<&str> for ElectricalType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub enum PinGraphicStyle {
     Line,
     Inverted,
