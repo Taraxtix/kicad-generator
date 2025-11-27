@@ -1,4 +1,5 @@
-use std::str::FromStr;
+use std::{fmt::{Display, Formatter},
+          str::FromStr};
 
 use log::warn;
 use serde::{Deserialize, Serialize};
@@ -197,11 +198,87 @@ impl Graphic {
     }
 }
 
+impl Display for Graphic {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Graphic::Arc { start: (sx, sy), mid: (mx, my), end: (ex, ey), stroke, fill } => {
+                f.write_fmt(format_args!(
+                    "(arc\n(start {sx} {sy})\n(mid {mx} {my})\n(end {ex} \
+                     {ey})\n{stroke}\n{fill}\n)"
+                ))
+            },
+            Graphic::Circle { center: (cx, cy), radius, stroke, fill } => {
+                f.write_fmt(format_args!(
+                    "(circle\n(center {cx} {cy})\n(radius {radius})\n{stroke}\n{fill})"
+                ))
+            },
+            Graphic::Bezier { points, stroke, fill } => {
+                f.write_str("(bezier\n(pts")?;
+                for point in points {
+                    f.write_fmt(format_args!("\n(xy {x} {y})", x = point.0, y = point.1))?;
+                }
+                f.write_fmt(format_args!(")\n{stroke}\n{fill}"))
+            },
+            Graphic::Polyline { points, stroke, fill } => {
+                f.write_str("(polyline\n(pts")?;
+                for point in points {
+                    f.write_fmt(format_args!("\n(xy {x} {y})", x = point.0, y = point.1))?;
+                }
+                f.write_fmt(format_args!(")\n{stroke}\n{fill}"))
+            },
+            Graphic::Rectangle { start: (sx, sy), end: (ex, ey), stroke, fill } => {
+                f.write_fmt(format_args!(
+                    "\
+            (rectangle\n(start {sx} {sy})\n(end {ex} {ey})\n{stroke}\n{fill})"
+                ))
+            },
+            Graphic::Text { text, position } => {
+                f.write_fmt(format_args!("(text\n(text \"{text}\")\n{position}\n)"))
+            },
+            Graphic::Pin {
+                electrical_type,
+                pin_graphic_style,
+                position,
+                length,
+                hide,
+                name,
+                name_text_effect,
+                number,
+                number_text_effect,
+                alternates,
+            } => {
+                f.write_fmt(format_args!(
+                    "(pin\n{electrical_type}\n{pin_graphic_style}\n{position}\n(length \
+                     {length})\n(hide {})\n(name \"{name}\" {name_text_effect})\n(number \
+                     \"{number}\" {number_text_effect})\n",
+                    if *hide { "yes" } else { "no" }
+                ))?;
+                // {alternates}\n))
+                for alternate in alternates {
+                    f.write_fmt(format_args!("{alternate}\n"))?;
+                }
+                f.write_str(")")
+            },
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 pub struct PinAlternate {
     name: String,
     electrical_type: ElectricalType,
     pin_graphic_style: PinGraphicStyle,
+}
+
+impl Display for PinAlternate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "(alternate \"{name}\" {electrical_type} {pin_graphic_style}))",
+            name = self.name,
+            electrical_type = self.electrical_type,
+            pin_graphic_style = self.pin_graphic_style,
+        ))
+    }
 }
 
 impl PinAlternate {
@@ -229,6 +306,17 @@ pub struct Stroke {
     width: f32,
     ty:    StrokeType,
     color: Option<(f32, f32, f32, f32)>, // RGBA
+}
+
+impl Display for Stroke {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Stroke { width, ty, color } = self;
+        f.write_fmt(format_args!("(stroke\n(width {width})\n(type {ty})\n"))?;
+        if let Some((r, g, b, a)) = color {
+            f.write_fmt(format_args!("(color {r} {g} {b} {a})\n"))?;
+        }
+        f.write_str(")")
+    }
 }
 
 impl Stroke {
@@ -264,6 +352,19 @@ pub enum StrokeType {
     Solid,
 }
 
+impl Display for StrokeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StrokeType::Dash => f.write_str("dash"),
+            StrokeType::DashDot => f.write_str("dash_dot"),
+            StrokeType::DashDotDot => f.write_str("dash_dot_dot"),
+            StrokeType::Dot => f.write_str("dot"),
+            StrokeType::Default => f.write_str("default"),
+            StrokeType::Solid => f.write_str("solid"),
+        }
+    }
+}
+
 impl StrokeType {
     fn extract_from(content: &str) -> Result<(Self, &str), String> {
         let (ty, content) = parser::expect_regex(
@@ -292,10 +393,17 @@ pub enum Fill {
     Background,
 }
 
+impl Display for Fill {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Fill::None => f.write_str("(fill\n(type none)\n)"),
+            Fill::Outline => f.write_str("(fill\n(type outline)\n)"),
+            Fill::Background => f.write_str("(fill\n(type background)\n)"),
+        }
+    }
+}
+
 impl Fill {
-    //      (fill
-    //         (type background)
-    //     )
     fn extract_from(content: &str) -> Result<(Self, &str), String> {
         let content = parser::expect_str(content, "(fill")?;
 
@@ -317,7 +425,6 @@ impl Fill {
 pub struct TextEffect {
     font:    Font,
     justify: Option<String>,
-    italic:  bool,
     hide:    bool,
 }
 
@@ -326,7 +433,7 @@ impl TextEffect {
         let content = parser::expect_str(content, "(effects")?;
         let (font, mut content) = Font::extract_from(content)?;
 
-        let mut it = Self { font, hide: false, justify: None, italic: false };
+        let mut it = Self { font, hide: false, justify: None };
 
         loop {
             if content.starts_with(")") {
@@ -353,10 +460,34 @@ impl TextEffect {
     }
 }
 
+impl Display for TextEffect {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let TextEffect { font, justify, hide } = self;
+        f.write_fmt(format_args!("(effects\n{font}\n"))?;
+        if let Some(justify) = justify {
+            f.write_fmt(format_args!("(justify {justify})\n"))?;
+        }
+        if *hide {
+            f.write_str("hide\n")?;
+        }
+        f.write_str(")")
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
 struct Font {
     size:   (f32, f32), //(size HEIGHT WIDTH)
     italic: bool,
+}
+
+impl Display for Font {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("(font\n(size {} {})", self.size.0, self.size.1))?;
+        if self.italic {
+            f.write_str(" (italic yes)")?;
+        }
+        f.write_str("\n)")
+    }
 }
 
 impl Font {
@@ -418,8 +549,27 @@ impl From<&str> for ElectricalType {
             "open_collector" => Self::OpenCollector,
             "open_emitter" => Self::OpenEmitter,
             "no_connect" => Self::NoConnect,
-            s => unreachable!("got {s} for ElectricalType"),
+            _ => unreachable!("Unknown ElectricalType"),
         }
+    }
+}
+
+impl Display for ElectricalType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ElectricalType::Input => "input",
+            ElectricalType::Output => "output",
+            ElectricalType::Bidirectional => "bidirectional",
+            ElectricalType::TriState => "tri_state",
+            ElectricalType::Passive => "passive",
+            ElectricalType::Free => "free",
+            ElectricalType::Unspecified => "unspecified",
+            ElectricalType::PowerIn => "power_in",
+            ElectricalType::PowerOut => "power_out",
+            ElectricalType::OpenCollector => "open_collector",
+            ElectricalType::OpenEmitter => "open_emitter",
+            ElectricalType::NoConnect => "no_connect",
+        })
     }
 }
 
@@ -448,7 +598,23 @@ impl From<&str> for PinGraphicStyle {
             "output_low" => Self::OutputLow,
             "edge_clock_high" => Self::EdgeClockHigh,
             "non_logic" => Self::NonLogic,
-            s => unreachable!("got {s} for ElectricalType"),
+            _ => unreachable!("Unknown pin graphic style"),
         }
+    }
+}
+
+impl Display for PinGraphicStyle {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PinGraphicStyle::Line => "line",
+            PinGraphicStyle::Inverted => "inverted",
+            PinGraphicStyle::Clock => "clock",
+            PinGraphicStyle::InvertedClock => "inverted_clock",
+            PinGraphicStyle::InputLow => "input_low",
+            PinGraphicStyle::ClockLow => "clock_low",
+            PinGraphicStyle::OutputLow => "output_low",
+            PinGraphicStyle::EdgeClockHigh => "edge_clock_high",
+            PinGraphicStyle::NonLogic => "non_logic",
+        })
     }
 }

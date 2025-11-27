@@ -91,20 +91,20 @@ impl SymbolLibraries {
 
     pub fn search_by_name<P>(&self, pattern: P) -> Vec<&Symbol>
     where P: Pattern + Copy {
-        for lib in self.iter() {
-            for symbol in lib.symbols.iter() {
-                if symbol.name.contains(pattern) {
-                    println!("Found symbol {} in library {}", symbol.name, lib.name);
-                }
-            }
-        }
-        todo!()
+        self.iter()
+            .flat_map(|lib| {
+                lib.symbols
+                    .iter()
+                    .filter(|symbol| symbol.name.contains(pattern))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 }
 
 impl IntoIterator for SymbolLibraries {
-    type IntoIter = IntoIter<SymbolLibrary>;
     type Item = SymbolLibrary;
+    type IntoIter = IntoIter<SymbolLibrary>;
 
     fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
 }

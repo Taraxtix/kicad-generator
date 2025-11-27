@@ -15,7 +15,8 @@ the goal of this library is to be able to programmatically represent circuits an
 
 - [x] Read symbols library files
 - [x] Place a symbol on a schematic
-- [ ] Write schematic to a file
+- [x] Write schematic to a file
+- [ ] Be able to connect wire to specific pins of a symbolInstance
 - [ ] Be able to manipulate higher level building blocks (e.g. Monostable/Astable 555 timer with parametric delays)
 - [ ] Generate a starting PCB layout for that schematic
 - [ ] Write footprint to a file

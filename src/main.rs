@@ -1,9 +1,9 @@
 use std::{fs::OpenOptions, io::Write, path::Path, sync::OnceLock};
 
 use clap::Parser;
-use kicad_generator::{PAGE_HEIGHT,
-                      PAGE_WIDTH,
-                      schematic::{KicadSch, Position, symbol_library::SymbolLibraries}};
+use kicad_generator::{schematic::{symbol_library::SymbolLibraries, KicadSch, Position},
+                      PAGE_HEIGHT,
+                      PAGE_WIDTH};
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -66,11 +66,16 @@ fn main() {
     }
 
     let symbols_555s = symbol_libraries.search_by_name("Timer, 555");
-    schematic.place(symbols_555s[0], Position {
-        x: PAGE_WIDTH as f32 / 2.,
-        y: PAGE_HEIGHT as f32 / 2.,
-        rotation: None,
-    });
+    for symbol in &symbols_555s {
+        println!("Found symbol: {}", symbol.name);
+    }
+    schematic
+        .place(symbols_555s[0], Position {
+            x: PAGE_WIDTH as f32 / 2.,
+            y: PAGE_HEIGHT as f32 / 2.,
+            rotation: None,
+        })
+        .expect("Failed to place symbol");
 
     if let Some(output_path) = args.sheet_output {
         let mut file =

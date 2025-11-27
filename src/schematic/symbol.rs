@@ -1,18 +1,20 @@
+use std::fmt::{Display, Formatter};
+
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{parser,
-            schematic::{KicadSch,
-                        Position,
-                        graphic::{Graphic, TextEffect}}};
+            schematic::{graphic::{Graphic, TextEffect},
+                        KicadSch,
+                        Position}};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Symbol {
     pub name: String,
     exclude_from_sim: bool,
     pin_names: (Option<f32>, bool), //[(pin_names [offset OFFSET] hide)]
-    pin_numbers: bool,              /* (pin_numbers hide) => true if it exist (hidden), false
+    pin_numbers: bool,              /* (pin_numbers hide) => true if it exists (hidden), false
                                      * otherwise */
     in_bom: bool,
     on_board: bool,
@@ -127,6 +129,47 @@ impl Symbol {
     }
 }
 
+impl Display for Symbol {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("(symbol")?;
+        f.write_fmt(format_args!("\n\"{}\"", self.name))?;
+        // f.write_fmt(format_args!(
+        //     "(exclude_from_sim {})",
+        //     if self.exclude_from_sim { "no" } else { "yes" }
+        // ))?;
+        // if self.pin_numbers {
+        //     f.write_str("(pin_numbers hide)")?;
+        // }
+        // if let Some(offset) = self.pin_names.0 {
+        //     f.write_fmt(format_args!(
+        //         "(pin_names (offset {}) {})",
+        //         offset,
+        //         if self.pin_names.1 { "hide" } else { "" }
+        //     ))?;
+        // }
+        // f.write_fmt(format_args!("(in_bom {})", if self.in_bom { "yes" } else { "no" }))?;
+        // f.write_fmt(format_args!("(on_board {})", if self.on_board { "yes" } else { "no" }))?;
+        // for property in &self.properties {
+        //     f.write_fmt(format_args!("\n{}", property))?;
+        // }
+        for graphic in &self.graphics {
+            f.write_fmt(format_args!("\n{}", graphic))?;
+        }
+        for pin in &self.pins {
+            f.write_fmt(format_args!("\n{}", pin))?;
+        }
+        for unit in &self.units {
+            let mut unit = unit.clone();
+            unit.name = unit.name.split_once(':').unwrap().1.to_string();
+            f.write_fmt(format_args!("\n{}", unit))?;
+        }
+        if let Some(unit_name) = &self.unit_name {
+            f.write_fmt(format_args!("(unit_name {})", unit_name))?;
+        }
+        f.write_str(")")
+    }
+}
+
 #[derive(Debug)]
 pub struct SymbolInstance {
     pub name: String,
@@ -138,6 +181,48 @@ pub struct SymbolInstance {
     properties: Vec<Property>,
     pins: Vec<Pin>,
     instance: Instance, // FIXME: Should be Vec<Instance> (Also see fixme of Instance type)
+}
+
+impl Display for SymbolInstance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "(symbol\n(lib_id \n\"{name}\")\n{position}\n(unit {unit})\n(in_bom \
+             {in_bom})\n(on_board {on_board})\n(uuid \"{uuid}\")",
+            name = self.name,
+            position = self.position,
+            unit = self.unit,
+            in_bom = if self.in_bom { "yes" } else { "no" },
+            on_board = if self.on_board { "yes" } else { "no" },
+            uuid = self.uuid
+        ))?;
+        for property in &self.properties {
+            let mut property = property.clone();
+            property.position = Position {
+                x: self.position.x + property.position.x,
+                y: self.position.y + property.position.y,
+                rotation: Some(
+                    self.position.rotation.unwrap_or(0.0)
+                        + property.position.rotation.unwrap_or(0.0),
+                ),
+            };
+            f.write_fmt(format_args!("\n{}", property))?;
+        }
+        for pin in &self.pins {
+            f.write_fmt(format_args!(
+                "\n(pin \"{name}\" (uuid {uuid}))",
+                name = pin.name,
+                uuid = pin.uuid
+            ))?;
+        }
+        f.write_fmt(format_args!(
+            "\n(instances\n(project \"{project_name}\" (path \"{path}\" (reference \
+             \"{reference}\") (unit {unit}))))))",
+            project_name = self.instance.project_name,
+            path = self.instance.path.path,
+            reference = self.instance.path.reference,
+            unit = self.instance.path.unit
+        ))
+    }
 }
 
 impl SymbolInstance {
@@ -155,7 +240,7 @@ impl SymbolInstance {
             .value
             .clone();
 
-        let pins = symbol.pins.iter().map(|pin| Pin::from(pin)).collect();
+        let pins = symbol.pins.iter().map(Pin::from).collect();
 
         Ok(Self {
             name: symbol.name.clone(),
@@ -185,6 +270,21 @@ struct Property {
     position: Position,
     do_not_autoplace: bool,
     text_effect: TextEffect,
+}
+
+impl Display for Property {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "(property \"{name}\" \"{value}\" {position}",
+            name = self.name,
+            value = self.value,
+            position = self.position,
+        ))?;
+        if self.do_not_autoplace {
+            f.write_str(" (do_not_autoplace)")?;
+        }
+        f.write_fmt(format_args!(" {})", self.text_effect))
+    }
 }
 
 impl Property {
